@@ -55,10 +55,39 @@ class Settings(BaseSettings):
     CALIBRATION_MM_PER_PIXEL: float = 0.35  # Approx mm per pixel at canonical size
     DEFAULT_TARGET_TYPE: str = "issf_standard_10_ring"
 
+    # AI Model Detection settings
+    MODELS_DIR: Path = BASE_DIR / "models"
+    AI_MODEL_PATH: Path = BASE_DIR / "models" / "bullet_hole_yolo.pt"
+    AI_YOLO26_PATH: Path = BASE_DIR / "models" / "bullet_hole_yolo26.pt"
+    AI_YOLO11_PATH: Path = BASE_DIR / "models" / "bullet_hole_yolo11.pt"
+    AI_CONFIDENCE_THRESHOLD: float = 0.15
+    AI_IOU_THRESHOLD: float = 0.45
+    DETECTION_ENGINE: str = "hybrid"  # "hybrid", "ai", "cv", or "gemini"
+
+    # Gemini Multimodal AI Settings
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    def get_effective_gemini_model(self) -> str:
+        """
+        Returns a valid, active Gemini model identifier.
+        If user specified a deprecated model (such as gemini-2.5, gemini-2.0, gemini-1.5),
+        automatically upgrades to 'gemini-3.8-flash' to prevent 404 NOT_FOUND errors.
+        """
+        m = (self.GEMINI_MODEL or "").strip()
+        if not m:
+            return "gemini-3.8-flash"
+        legacy_prefixes = ("gemini-2.5", "gemini-2.0", "gemini-1.5")
+        if any(m.startswith(prefix) for prefix in legacy_prefixes):
+            return "gemini-3.8-flash"
+        return m
+
 
 settings = Settings()
 
 # Ensure required storage directories exist at startup
 settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 settings.ANNOTATED_DIR.mkdir(parents=True, exist_ok=True)
+settings.MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
 

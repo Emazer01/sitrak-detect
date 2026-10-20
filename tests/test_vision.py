@@ -163,3 +163,148 @@ def test_invalid_image_upload():
     data = response.json()
     assert data["target_detected"] is False
 
+
+def test_model_status_endpoint():
+    response = client.get("/api/v1/detect/model-status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "detection_engine" in data
+    assert "confidence_threshold" in data
+
+
+def test_model_reload_endpoint():
+    response = client.post("/api/v1/detect/model-reload")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] in ["success", "warning"]
+    assert "reloaded" in data
+
+
+def test_detection_engines_endpoint():
+    response = client.get("/api/v1/detect/engines")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "engines" in data
+    engine_ids = [e["id"] for e in data["engines"]]
+    assert "model_sendiri" in engine_ids
+    assert "gemini" in engine_ids
+
+
+def test_detect_upload_with_engine_model_sendiri():
+    image_bytes = generate_synthetic_target_image()
+    response = client.post(
+        "/api/v1/detect/upload",
+        files={"file": ("target_test.jpg", image_bytes, "image/jpeg")},
+        data={
+            "target_type": "issf_standard_10_ring",
+            "caliber_mm": "4.5",
+            "engine": "model_sendiri"
+        }
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["target_detected"] is True
+    assert data["detection_engine_used"] == "model_sendiri"
+
+
+def test_gemini_configuration_status():
+    response = client.get("/api/v1/detect/model-status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "gemini_api_configured" in data
+    assert data["gemini_api_configured"] is True
+    assert "gemini_model" in data
+    assert "available_engines" in data
+    assert "gemini" in data["available_engines"]
+    assert "model_sendiri" in data["available_engines"]
+
+
+def test_detect_upload_with_engine_yolo26():
+    image_bytes = generate_synthetic_target_image()
+    response = client.post(
+        "/api/v1/detect/upload",
+        files={"file": ("target_test.jpg", image_bytes, "image/jpeg")},
+        data={
+            "target_type": "issf_standard_10_ring",
+            "caliber_mm": "4.5",
+            "engine": "yolo26"
+        }
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["target_detected"] is True
+    assert data["detection_engine_used"] in ["yolo26", "yolo26_ai", "model_sendiri", "classical_cv_ensemble"]
+
+
+def test_detect_upload_with_engine_yolo11():
+    image_bytes = generate_synthetic_target_image()
+    response = client.post(
+        "/api/v1/detect/upload",
+        files={"file": ("target_test.jpg", image_bytes, "image/jpeg")},
+        data={
+            "target_type": "issf_standard_10_ring",
+            "caliber_mm": "4.5",
+            "engine": "yolo11"
+        }
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["target_detected"] is True
+    assert data["detection_engine_used"] in ["yolo11", "yolo11_ai", "model_sendiri", "classical_cv_ensemble"]
+
+
+def test_auto_crop_square_on_landscape_upload():
+    """Verify that a non-1:1 landscape image (1200x800) is automatically cropped to 1:1 square."""
+    img_square = generate_synthetic_target_image()
+    nparr = np.frombuffer(img_square, np.uint8)
+    base_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    # Pad horizontally to make 1200x800 (landscape 3:2)
+    landscape = cv2.copyMakeBorder(base_img, 0, 0, 200, 200, cv2.BORDER_CONSTANT, value=[220, 220, 220])
+    _, buf = cv2.imencode(".jpg", landscape)
+
+    response = client.post(
+        "/api/v1/detect/upload",
+        files={"file": ("target_landscape.jpg", buf.tobytes(), "image/jpeg")},
+        data={"target_type": "issf_standard_10_ring"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["target_detected"] is True
+    assert data["metadata"]["cropped_to_square"] is True
+    assert data["metadata"]["crop_box"]["width"] == data["metadata"]["crop_box"]["height"]
+    assert data["metadata"]["crop_box"]["width"] == 800
+
+
+def test_auto_crop_square_on_portrait_upload():
+    """Verify that a non-1:1 portrait image (800x1200) is automatically cropped to 1:1 square."""
+    img_square = generate_synthetic_target_image()
+    nparr = np.frombuffer(img_square, np.uint8)
+    base_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    # Pad vertically to make 800x1200 (portrait 2:3)
+    portrait = cv2.copyMakeBorder(base_img, 200, 200, 0, 0, cv2.BORDER_CONSTANT, value=[220, 220, 220])
+    _, buf = cv2.imencode(".jpg", portrait)
+
+    response = client.post(
+        "/api/v1/detect/upload",
+        files={"file": ("target_portrait.jpg", buf.tobytes(), "image/jpeg")},
+        data={"target_type": "issf_standard_10_ring"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["target_detected"] is True
+    assert data["metadata"]["cropped_to_square"] is True
+    assert data["metadata"]["crop_box"]["width"] == data["metadata"]["crop_box"]["height"]
+    assert data["metadata"]["crop_box"]["height"] == 800
+
+
+
+

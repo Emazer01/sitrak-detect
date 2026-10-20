@@ -23,7 +23,9 @@ class ScoringEngine:
         center_y: float,
         ring_radii: Dict[int, float],
         bullet_radius_px: float = 6.0,
-        mm_per_pixel: Optional[float] = None
+        mm_per_pixel: Optional[float] = None,
+        confidence: Optional[float] = None,
+        detection_source: str = "cv"
     ) -> ShotDetail:
         """
         Calculates distance from bullseye and ring score (1-10) for a given shot.
@@ -64,7 +66,9 @@ class ScoringEngine:
             y=round(y, 1),
             score=score,
             distance_from_center=round(dist_mm, 2),
-            decimal_score=dec_score
+            decimal_score=dec_score,
+            confidence=round(confidence, 2) if confidence is not None else None,
+            detection_source=detection_source
         )
 
     def compute_analytics(

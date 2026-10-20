@@ -1,13 +1,12 @@
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 opencv-python-headless>=4.9.0.80
-# Python 3.14 requires NumPy 2.1+; older 1.x builds fail metadata generation on Windows.
-numpy>=2.1.0
+numpy>=1.26.0
 pillow>=10.3.0
 pydantic>=2.7.0
 pydantic-settings>=2.2.0
 python-multipart>=0.0.9
 requests>=2.31.0
+ultralytics>=8.2.0
 pytest>=8.0.0
 httpx>=0.27.0
-

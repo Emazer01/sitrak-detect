@@ -15,11 +15,23 @@ router = APIRouter()
 
 
 @router.post(
-    "/upload",
+    "",
     response_model=DetectionResponse,
     status_code=status.HTTP_200_OK,
     summary="Detect shots from uploaded target photo",
     description="Accepts multipart/form-data image file, performs computer vision analysis, scoring, and returns visual overlay."
+)
+@router.post(
+    "/",
+    response_model=DetectionResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False
+)
+@router.post(
+    "/upload",
+    response_model=DetectionResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False
 )
 async def detect_shots_upload(
     file: UploadFile = File(..., description="Target image file (JPEG, PNG, etc.)"),
@@ -27,7 +39,8 @@ async def detect_shots_upload(
     caliber_mm: Optional[float] = Form(4.5, description="Bullet caliber in mm (e.g. 4.5, 5.56, 9.0)"),
     calibration_mm_per_pixel: Optional[float] = Form(None, description="Custom scale override (mm/pixel)"),
     shooter_name: Optional[str] = Form(None, description="Shooter identifier or name"),
-    session_id: Optional[str] = Form(None, description="Shooting session tracking ID")
+    session_id: Optional[str] = Form(None, description="Shooting session tracking ID"),
+    engine: Optional[str] = Form("model_sendiri", description="Detection engine: 'model_sendiri' (YOLOv8/CV) or 'gemini' (Gemini API)")
 ) -> DetectionResponse:
     # 1. Validate file content and size
     file_bytes = await file.read()
@@ -46,7 +59,8 @@ async def detect_shots_upload(
         "original_filename": file.filename,
         "raw_image_url": raw_url,
         "shooter_name": shooter_name,
-        "session_id": session_id
+        "session_id": session_id,
+        "requested_engine": engine
     }
 
     # 4. Execute Vision Pipeline
@@ -56,7 +70,8 @@ async def detect_shots_upload(
         caliber_mm=caliber_mm or 4.5,
         target_type=target_type or "issf_standard_10_ring",
         scale_override=calibration_mm_per_pixel,
-        metadata=metadata
+        metadata=metadata,
+        engine=engine
     )
 
     return result
@@ -85,7 +100,8 @@ async def detect_shots_frame(
     # 2. Execute Vision Pipeline
     metadata = {
         "frame_mode": "incremental_stream",
-        "known_shots_count": payload.known_shots_count
+        "known_shots_count": payload.known_shots_count,
+        "requested_engine": payload.engine
     }
 
     result = vision_service.process_image(
@@ -93,7 +109,8 @@ async def detect_shots_frame(
         caliber_mm=payload.caliber_mm or 4.5,
         target_type=payload.target_type or "issf_standard_10_ring",
         scale_override=payload.calibration_mm_per_pixel,
-        metadata=metadata
+        metadata=metadata,
+        engine=payload.engine
     )
 
     # Add delta shots calculation in metadata
@@ -103,4 +120,55 @@ async def detect_shots_frame(
             result.metadata["new_shots_detected"] = new_shots
 
     return result
+
+
+@router.get(
+    "/engines",
+    summary="Get list of available detection engines",
+    description="Lists selectable detection engines (model_sendiri vs gemini) with their availability and models."
+)
+async def get_detection_engines():
+    return {
+        "status": "success",
+        "default_engine": settings.DETECTION_ENGINE,
+        "engines": vision_service.get_available_engines()
+    }
+
+
+@router.get(
+    "/model-status",
+    summary="Get active AI detection model information",
+    description="Returns current active AI engine, loaded model file, and inference parameters."
+)
+async def get_model_status():
+    return {
+        "status": "success",
+        "detection_engine": settings.DETECTION_ENGINE,
+        "ai_model_loaded": vision_service.ai_model is not None,
+        "active_model_name": vision_service.ai_model_name or "none",
+        "model_file_exists": settings.AI_MODEL_PATH.exists(),
+        "model_path": str(settings.AI_MODEL_PATH.resolve()),
+        "confidence_threshold": settings.AI_CONFIDENCE_THRESHOLD,
+        "iou_threshold": settings.AI_IOU_THRESHOLD,
+        "gemini_api_configured": vision_service.gemini_service.is_configured(),
+        "gemini_model": settings.GEMINI_MODEL,
+        "gemini_effective_model": settings.get_effective_gemini_model(),
+        "available_engines": [e["id"] for e in vision_service.get_available_engines()]
+    }
+
+
+@router.post(
+    "/model-reload",
+    summary="Hot-reload AI model weights into memory",
+    description="Reloads the latest model weights from disk without needing to restart the server."
+)
+async def reload_model_weights():
+    reloaded = vision_service.reload_model()
+    return {
+        "status": "success" if reloaded else "warning",
+        "reloaded": reloaded,
+        "active_model_name": vision_service.ai_model_name or "none",
+        "message": "AI model reloaded successfully." if reloaded else "No AI model weights found to load. Running in classical CV mode."
+    }
+
 

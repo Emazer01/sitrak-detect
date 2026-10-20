@@ -1,12 +1,35 @@
-# Byte-compiled / optimized / DLL files
+# =============================================================================
+# SITRAK-DETECT .gitignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Environment & Secrets (Sangat Rahasia - JANGAN di-push)
+# -----------------------------------------------------------------------------
+.env
+.env.*
+*.env
+!*.env.example
+*.pem
+*.key
+*.cert
+
+# -----------------------------------------------------------------------------
+# 2. Virtual Environments (Environment Python Lokal)
+# -----------------------------------------------------------------------------
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# -----------------------------------------------------------------------------
+# 3. Python Cache, Bytecode & Build Artifacts
+# -----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -23,31 +46,126 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.mypy_cache/
+.ruff_cache/
 
-# Virtual environments
-venv/
-env/
-ENV/
-.venv/
+# -----------------------------------------------------------------------------
+# 4. YOLO Base Weights & Checkpoints Otomatis
+# -----------------------------------------------------------------------------
+# File bobot model base yang diunduh otomatis oleh Ultralytics di root
+/yolo*.pt
+/yolov8*.pt
+/yolo11*.pt
+/yolo26*.pt
+*.pt.tmp
+*.onnx
+*.engine
+*.torchscript
 
-# Environment variables
-.env
-.env.local
+# Catatan untuk model di folder models/:
+# Bobot produksi terlatih (bullet_hole_yolo*.pt ~5MB) disimpan di models/.
+# Jika ingin mengecualikan model besar dan menyimpannya di Git LFS / GitHub Release,
+# aktifkan (uncomment) 2 baris di bawah ini:
+# models/*.pt
+# !models/.gitkeep
 
-# IDE & Editor
-.vscode/
-.idea/
-*.swp
-*.swo
+# -----------------------------------------------------------------------------
+# 5. Training Outputs, Runs & Logs (Sangat Besar - Ratusan MB)
+# -----------------------------------------------------------------------------
+runs/
+training/runs/
+training/eval_results/
+wandb/
 
-# Project dynamic assets
+# -----------------------------------------------------------------------------
+# 6. Datasets Gambar & Label Anotasi (Dataset Berukuran Besar)
+# -----------------------------------------------------------------------------
+# Seluruh folder dataset lokal hasil ekstraksi & generate
+training/dataset_final/
+training/dataset_combined/
+training/dataset_kruger/
+training/yolo_target_holes_dataset/
+training/datasets/
+datasets/
+# Arsip dataset terkompresi
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# -----------------------------------------------------------------------------
+# 7. Static Dynamic Uploads & Hasil Anotasi Run-time
+# -----------------------------------------------------------------------------
+# Mengabaikan foto sasaran yang diunggah dan hasil deteksi dinamis,
+# tetapi mempertahankan folder struktur melalui .gitkeep
 static/uploads/*
 static/annotated/*
 !static/uploads/.gitkeep
 !static/annotated/.gitkeep
 
-# Pytest / coverage
+# -----------------------------------------------------------------------------
+# 8. Testing & Coverage
+# -----------------------------------------------------------------------------
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+coverage.xml
+*.cover
+
+# -----------------------------------------------------------------------------
+# 9. Logs
+# -----------------------------------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+
+# -----------------------------------------------------------------------------
+# 10. Editor & IDE (Pengaturan Pribadi Pengembang)
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------------------------------------------------------
+# 11. OS Generated Files (Windows & Mac)
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# -----------------------------------------------------------------------------
+# 10. Editor & IDE (Pengaturan Pribadi Pengembang)
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------------------------------------------------------
+# 11. OS Generated Files (Windows & Mac)
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
 
