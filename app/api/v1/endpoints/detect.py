@@ -40,7 +40,7 @@ async def detect_shots_upload(
     calibration_mm_per_pixel: Optional[float] = Form(None, description="Custom scale override (mm/pixel)"),
     shooter_name: Optional[str] = Form(None, description="Shooter identifier or name"),
     session_id: Optional[str] = Form(None, description="Shooting session tracking ID"),
-    engine: Optional[str] = Form("model_sendiri", description="Detection engine: 'model_sendiri' (YOLOv8/CV) or 'gemini' (Gemini API)")
+    engine: Optional[str] = Form("model_sendiri", description="Detection engine: 'model_sendiri', 'yolo26', or 'yolo11'")
 ) -> DetectionResponse:
     # 1. Validate file content and size
     file_bytes = await file.read()
@@ -125,7 +125,7 @@ async def detect_shots_frame(
 @router.get(
     "/engines",
     summary="Get list of available detection engines",
-    description="Lists selectable detection engines (model_sendiri vs gemini) with their availability and models."
+    description="Lists selectable detection engines (model_sendiri, yolo26, yolo11) with their availability and models."
 )
 async def get_detection_engines():
     return {
@@ -150,9 +150,6 @@ async def get_model_status():
         "model_path": str(settings.AI_MODEL_PATH.resolve()),
         "confidence_threshold": settings.AI_CONFIDENCE_THRESHOLD,
         "iou_threshold": settings.AI_IOU_THRESHOLD,
-        "gemini_api_configured": vision_service.gemini_service.is_configured(),
-        "gemini_model": settings.GEMINI_MODEL,
-        "gemini_effective_model": settings.get_effective_gemini_model(),
         "available_engines": [e["id"] for e in vision_service.get_available_engines()]
     }
 

@@ -18,7 +18,6 @@ from app.schemas.detection import (
     TargetAnalytics
 )
 from app.services.scoring_engine import scoring_engine
-from app.services.gemini_service import GeminiVisionService
 from app.storage.file_storage import storage_service
 
 
@@ -28,13 +27,12 @@ class VisionService:
     for Shooting Target Hole Detection and Automated Scoring:
 
     Multi-Model / Multi-Algorithm Ensemble:
-    1. Deep Learning (YOLOv8) - Learned feature extraction for paper tears & punctures.
+    1. Deep Learning (YOLO26 & YOLO11) - Learned feature extraction for paper tears & electronic dots.
     2. Difference of Gaussians (DoG) - Multi-scale circular blob filter immune to printed lines/numbers.
     3. MSER (Maximally Stable Extremal Regions) - Affine & illumination invariant puncture locator.
     4. Distance Transform & Watershed - Automatic decomposition of overlapping double-taps / keyholes.
     5. Strict False-Positive Filtering - Rejection of printed numbers, target ring arcs, and crosshairs.
     6. Consensus Ensemble Fusion - Multi-engine consensus voting for ultra-high precision.
-    7. Gemini Multimodal Cloud AI - High-precision cloud multimodal target reasoning.
     """
 
     def __init__(self):
@@ -43,7 +41,6 @@ class VisionService:
         self.ai_model = None
         self.ai_model_name = ""
         self.models_cache: Dict[str, Any] = {}
-        self.gemini_service = GeminiVisionService()
         self._load_ai_model()
 
     def _load_ai_model(self) -> None:
@@ -461,20 +458,71 @@ class VisionService:
                 if dist < 5.0 and c < 0.35:
                     continue
 
-                # Check if candidate is an elongated double-tap (two bullets touching/keyhole)
+                # Check if candidate is an elongated double-tap (two bullets touching/keyhole/adjacent)
                 aspect_ratio = max(bw, bh) / max(1.0, min(bw, bh))
                 tag = f"{model_name}_ai" if model_name else "yolo_ai"
-                if aspect_ratio >= 1.35 and c >= 0.30:
-                    if bw > bh:
-                        # Horizontal double-tap
-                        offset = bw * 0.22
-                        candidates.append((cx - offset, cy, bh / 2.0, c, f"{tag}_double_tap"))
-                        candidates.append((cx + offset, cy, bh / 2.0, c, f"{tag}_double_tap"))
-                    else:
-                        # Vertical double-tap
-                        offset = bh * 0.22
-                        candidates.append((cx, cy - offset, bw / 2.0, c, f"{tag}_double_tap"))
-                        candidates.append((cx, cy + offset, bw / 2.0, c, f"{tag}_double_tap"))
+                if (aspect_ratio >= 1.12 or (bw * bh) > 330) and c >= 0.20:
+                    px1, py1 = max(0, int(x1)), max(0, int(y1))
+                    px2, py2 = min(img_bgr.shape[1], int(x2)), min(img_bgr.shape[0], int(y2))
+                    patch = img_bgr[py1:py2, px1:px2]
+                    decomposed = False
+
+                    if patch.shape[0] > 6 and patch.shape[1] > 6:
+                        b_ch, g_ch, r_ch = cv2.split(patch)
+                        b_diff = b_ch.astype(int) - r_ch.astype(int)
+                        blue_m = ((b_diff > 35) & (b_ch > 100)).astype(np.uint8) * 255
+                        gray_p = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+                        dark_m = (gray_p < 85).astype(np.uint8) * 255
+                        white_m = (gray_p > 180).astype(np.uint8) * 255
+
+                        mask = blue_m if np.sum(blue_m) > 25 else (white_m if np.sum(white_m) > 25 else dark_m)
+                        if np.sum(mask) > 25:
+                            dist_map = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
+                            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+                            dilated = cv2.dilate(dist_map, kernel)
+                            local_max = (dist_map == dilated) & (dist_map > 2.0)
+                            peak_pts = np.argwhere(local_max)
+
+                            distinct_peaks = []
+                            for py, px in peak_pts:
+                                if not any(math.hypot(px - dx, py - dy) < 5.0 for dx, dy, _ in distinct_peaks):
+                                    distinct_peaks.append((px, py, dist_map[py, px]))
+
+                            if len(distinct_peaks) >= 2:
+                                for px, py, pr in distinct_peaks[:2]:
+                                    candidates.append((float(px1 + px), float(py1 + py), float(pr), c, f"{tag}_double_tap"))
+                                decomposed = True
+                            elif aspect_ratio >= 1.12:
+                                r_shot = min(bw, bh) / 2.0
+                                if bw > bh:
+                                    mid = patch.shape[1] // 2
+                                    if np.sum(mask[:, :mid]) > 15 and np.sum(mask[:, mid:]) > 15:
+                                        offset = bw * 0.25
+                                        candidates.append((cx - offset, cy, r_shot, c, f"{tag}_double_tap"))
+                                        candidates.append((cx + offset, cy, r_shot, c, f"{tag}_double_tap"))
+                                        decomposed = True
+                                else:
+                                    mid = patch.shape[0] // 2
+                                    if np.sum(mask[:mid, :]) > 15 and np.sum(mask[mid:, :]) > 15:
+                                        offset = bh * 0.25
+                                        candidates.append((cx, cy - offset, r_shot, c, f"{tag}_double_tap"))
+                                        candidates.append((cx, cy + offset, r_shot, c, f"{tag}_double_tap"))
+                                        decomposed = True
+
+                    if not decomposed and aspect_ratio >= 1.30:
+                        r_shot = min(bw, bh) / 2.0
+                        if bw > bh:
+                            offset = bw * 0.25
+                            candidates.append((cx - offset, cy, r_shot, c, f"{tag}_double_tap"))
+                            candidates.append((cx + offset, cy, r_shot, c, f"{tag}_double_tap"))
+                        else:
+                            offset = bh * 0.25
+                            candidates.append((cx, cy - offset, r_shot, c, f"{tag}_double_tap"))
+                            candidates.append((cx, cy + offset, r_shot, c, f"{tag}_double_tap"))
+                        decomposed = True
+
+                    if not decomposed:
+                        candidates.append((cx, cy, r, c, tag))
                 else:
                     candidates.append((cx, cy, r, c, tag))
 
@@ -717,15 +765,18 @@ class VisionService:
                 all_candidates.append((sx, sy, sr, 0.85, "watershed_split"))
 
         # Merge overlapping detections with spatial NMS
-        merged = self._merge_overlapping_holes(all_candidates, merge_threshold=14.0)
+        merged = self._merge_overlapping_holes(all_candidates, merge_threshold=4.5)
         return merged
 
     def _merge_overlapping_holes(
         self,
         candidates: List[Tuple[float, float, float, float, str]],
-        merge_threshold: float = 14.0
+        merge_threshold: float = 4.5
     ) -> List[Tuple[float, float, float, float, str]]:
-        """Deduplicates closely packed detections belonging to the same bullet hole."""
+        """
+        Deduplicates closely packed detections belonging to the exact same bullet hole.
+        Threshold is kept small (4.5px) so distinct adjacent / touching shots (double-taps) are preserved.
+        """
         if not candidates:
             return []
 
@@ -792,7 +843,7 @@ class VisionService:
             # In hybrid mode: if AI found shots, use AI detections merged for double-taps
             # If AI found 0 shots (e.g. edge case or uncharacteristic target), fall back to CV
             if len(ai_holes) > 0:
-                merged_ai = self._merge_overlapping_holes(ai_holes, merge_threshold=10.0)
+                merged_ai = self._merge_overlapping_holes(ai_holes, merge_threshold=4.5)
                 return merged_ai, model_tag
 
         cv_holes = self.detect_bullet_holes_cv(img_bgr, center_x, center_y, ring_radii, max_radius)
@@ -948,16 +999,6 @@ class VisionService:
             "description": "Arsitektur Ultralytics YOLO11 terlatih untuk deteksi sasaran tembak Krüger."
         })
 
-        # Gemini API option
-        engines.append({
-            "id": "gemini",
-            "name": f"Google Gemini API ({settings.GEMINI_MODEL})",
-            "type": "cloud_multimodal_ai",
-            "model": settings.get_effective_gemini_model(),
-            "is_available": self.gemini_service.is_configured(),
-            "description": "Model multimodal vision Google Gemini untuk deteksi sasaran tembak berbasis cloud."
-        })
-
         return engines
 
     def process_image(
@@ -973,7 +1014,7 @@ class VisionService:
         """
         Executes end-to-end pipeline:
         decode -> validate -> warp -> detect rings -> detect shots -> score -> annotate -> persist.
-        Supports choosing between 'model_sendiri', 'yolo26', 'yolo11', or 'gemini'.
+        Supports choosing between 'model_sendiri', 'yolo26', or 'yolo11'.
         """
         # 1. Decode & Validate
         img_bgr = self.decode_image_bytes(image_bytes)
@@ -991,37 +1032,13 @@ class VisionService:
 
         # 4. Bullet Hole Detection Engine Selection
         chosen_engine = (engine or settings.DETECTION_ENGINE).lower().strip()
-        use_gemini = chosen_engine in ["gemini", "api_gemini", "gemini_api", "cloud"]
         model_name = "yolo26" if "26" in chosen_engine else ("yolo11" if "11" in chosen_engine else None)
 
-        detected_holes: List[Tuple[float, float, float, float, str]] = []
-        engine_used: str = chosen_engine if chosen_engine in ["yolo26", "yolo11"] else "model_sendiri"
-
-        if use_gemini:
-            try:
-                g_holes, g_geom, g_engine = self.gemini_service.analyze_target(
-                    canonical_bgr, target_type=target_type
-                )
-                detected_holes = g_holes
-                engine_used = g_engine
-                if g_geom is not None:
-                    center_x, center_y, outer_r = g_geom
-                    ring_radii = {r: outer_r * (11 - r) / 10.0 for r in range(1, 11)}
-            except Exception as e:
-                print(f"[VisionService] Gemini detection failed: {e}. Falling back to model_sendiri.")
-                detected_holes, engine_used = self.detect_bullet_holes_hybrid(
-                    canonical_bgr, center_x, center_y, ring_radii, outer_r, model_name=model_name
-                )
-                if metadata is None:
-                    metadata = {}
-                metadata["gemini_error"] = str(e)
-                metadata["fallback_triggered"] = True
-        else:
-            detected_holes, engine_used = self.detect_bullet_holes_hybrid(
-                canonical_bgr, center_x, center_y, ring_radii, outer_r, model_name=model_name
-            )
-            if engine_used in ["yolo_ai", "classical_cv_ensemble"] and chosen_engine == "model_sendiri":
-                engine_used = "model_sendiri"
+        detected_holes, engine_used = self.detect_bullet_holes_hybrid(
+            canonical_bgr, center_x, center_y, ring_radii, outer_r, model_name=model_name
+        )
+        if engine_used in ["yolo_ai", "classical_cv_ensemble"] and chosen_engine == "model_sendiri":
+            engine_used = "model_sendiri"
 
         # Sort holes spatially (top-to-bottom, left-to-right)
         detected_holes = sorted(detected_holes, key=lambda h: (h[1], h[0]))

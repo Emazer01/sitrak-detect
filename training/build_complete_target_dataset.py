@@ -10,20 +10,24 @@ import numpy as np
 
 def build_augmented_user_samples(output_train_img: Path, output_train_lbl: Path, output_val_img: Path, output_val_lbl: Path):
     """
-    Augments the 5 user-uploaded Krüger target images with exact ground-truth labels
-    via rotations (0, 90, 180, 270, slight angle), flips, and photometric variations.
+    Augments all user target images (5 Krüger master scans + 12 smartphone photos of targets)
+    with exact ground-truth labels via rotations (0, 90, 180, 270, slight angle), flips,
+    and photometric / lighting variations.
     """
     user_samples_dir = Path("training/assets/user_samples")
-    sample_files = sorted(list(user_samples_dir.glob("user_kruger_*.jpg")))
+    sample_files = sorted(list(user_samples_dir.glob("user_*.jpg")))
 
-    print(f"[Augmenter] Found {len(sample_files)} user ground-truth images.")
+    print(f"[Augmenter] Found {len(sample_files)} user ground-truth images (master scans + real smartphone photos).")
 
     count = 0
-    val_set = {2, 4}  # Reserve sample 2 and 4 as parts of validation
+    # Reserve selected real user photos and master samples for validation
+    val_set = {"user_kruger_2", "user_kruger_4", "user_photo_3", "user_photo_8", "user_photo_11"}
 
     for s_idx, img_file in enumerate(sample_files, 1):
         lbl_file = img_file.with_suffix(".txt")
         img = cv2.imread(str(img_file))
+        if img is None:
+            continue
         h, w = img.shape[:2]
 
         # Read base bboxes
@@ -39,9 +43,9 @@ def build_augmented_user_samples(output_train_img: Path, output_train_lbl: Path,
                     ymax = (ncy + nbh / 2.0) * h
                     base_bboxes.append((xmin, ymin, xmax, ymax))
 
-        # Generate 45 augmented versions per user image
-        for aug_i in range(45):
-            is_val = (s_idx in val_set and aug_i < 8)
+        num_augs = 28
+        for aug_i in range(num_augs):
+            is_val = (img_file.stem in val_set and aug_i < 5)
             dst_img_dir = output_val_img if is_val else output_train_img
             dst_lbl_dir = output_val_lbl if is_val else output_train_lbl
 
@@ -76,9 +80,9 @@ def build_augmented_user_samples(output_train_img: Path, output_train_lbl: Path,
                 bboxes = new_boxes
 
             # 2. Lighting & contrast jitter
-            if random.random() < 0.50:
-                bright = random.uniform(0.90, 1.10)
-                cont = random.uniform(0.92, 1.08)
+            if random.random() < 0.60:
+                bright = random.uniform(0.88, 1.12)
+                cont = random.uniform(0.90, 1.10)
                 aug_img = np.clip(aug_img.astype(np.float32) * cont * bright, 0, 255).astype(np.uint8)
 
             # Resize to 640x640 standard YOLO input
@@ -103,7 +107,7 @@ def build_augmented_user_samples(output_train_img: Path, output_train_lbl: Path,
                 yolo_lines.append(f"0 {bcx/target_sz:.6f} {bcy/target_sz:.6f} {bw_box/target_sz:.6f} {bh_box/target_sz:.6f}")
 
             prefix = "val" if is_val else "train"
-            fn = f"user_aug_{s_idx}_{aug_i:03d}"
+            fn = f"usr_aug_{img_file.stem}_{aug_i:03d}"
             cv2.imwrite(str(dst_img_dir / f"{fn}.jpg"), img_resized, [cv2.IMWRITE_JPEG_QUALITY, 95])
             with open(dst_lbl_dir / f"{fn}.txt", "w") as f:
                 f.write("\n".join(yolo_lines) + ("\n" if yolo_lines else ""))
@@ -117,43 +121,72 @@ def generate_synthetic_digital_dots(
     output_train_lbl: Path,
     output_val_img: Path,
     output_val_lbl: Path,
-    num_samples: int = 400
+    num_samples: int = 500
 ):
     """
-    Synthesizes Krüger targets containing both white digital dots (in bullseye)
-    and grey digital dots (on cream paper), matching the user's electronic simulator format.
-    Also includes 16% HARD NEGATIVES (clean target with inner-10 white circle but NO shots).
+    Synthesizes Krüger / Pistol targets with:
+    - White / cyan digital dots (in bullseye)
+    - Blue digital dots (in scoring rings)
+    - Dark grey dots (in scoring rings)
+    - Faint low-contrast light grey dots (Foto 1 & 4)
+    - ADJACENT, TOUCHING & OVERLAPPING pairs and triplets (double-taps & clusters)
+    - LCD moiré scanline simulation
+    - 16% HARD NEGATIVES (clean target with 0 shots to suppress false positives on ring numbers).
     """
-    master_path = Path("training/assets/kruger_master.webp")
-    master_img = cv2.imread(str(master_path))
-    h, w = master_img.shape[:2]
-    cx, cy = w / 2.0, h / 2.0
-    bullseye_r = 148.6
-    outer_r = 376.0
+    templates = []
+    
+    # 1. Clean lesan template from user
+    t_lesan = Path("training/user_target_photos/lesan_extracted_image.png")
+    if t_lesan.exists():
+        im = cv2.imread(str(t_lesan))
+        if im is not None:
+            templates.append((im, 357.0, 443.0, 443.0))
+
+    # 2. Master webp
+    t_master = Path("training/assets/kruger_master.webp")
+    if t_master.exists():
+        im = cv2.imread(str(t_master))
+        if im is not None:
+            h, w = im.shape[:2]
+            templates.append((im, 148.6, w / 2.0, h / 2.0))
+
+    if not templates:
+        print("[Synthesizer] Warning: No base templates found.")
+        return
 
     target_sz = 640
-    scale_x = target_sz / float(w)
-    scale_y = target_sz / float(h)
-
-    print(f"[Synthesizer] Generating {num_samples} digital dots target images...")
+    print(f"[Synthesizer] Generating {num_samples} digital dots target images with adjacent & overlapping shots...")
 
     for i in range(num_samples):
-        is_val = (i < int(num_samples * 0.18))
+        is_val = (i < int(num_samples * 0.16))
         dst_img_dir = output_val_img if is_val else output_train_img
         dst_lbl_dir = output_val_lbl if is_val else output_train_lbl
 
-        img = master_img.copy()
+        base_tpl, bullseye_r, cx, cy = random.choice(templates)
+        img = base_tpl.copy()
+        h, w = img.shape[:2]
+        outer_r = min(cx, cy, w - cx, h - cy) * 0.94
+        scale_x = target_sz / float(w)
+        scale_y = target_sz / float(h)
 
-        # 16% Hard Negative (Clean target with 0 shots, to suppress false positives on inner-10 and numbers)
+        # 16% Hard Negative (clean target with 0 shots)
         is_hard_negative = (random.random() < 0.16)
         bboxes = []
 
         if not is_hard_negative:
-            num_shots = random.choices([1, 2, 3, 5, 8, 10], weights=[0.1, 0.15, 0.25, 0.25, 0.15, 0.10])[0]
+            target_total_shots = random.choices([1, 2, 3, 5, 8, 10], weights=[0.05, 0.10, 0.25, 0.25, 0.20, 0.15])[0]
+            current_shots = 0
 
-            for _ in range(num_shots):
-                # Sample position across target
-                dist = outer_r * (random.uniform(0.05, 0.98) ** 0.85)
+            while current_shots < target_total_shots:
+                remaining = target_total_shots - current_shots
+                if remaining >= 3 and random.random() < 0.25:
+                    event_type = "triplet"
+                elif remaining >= 2 and random.random() < 0.45:
+                    event_type = "pair"
+                else:
+                    event_type = "single"
+
+                dist = outer_r * (random.uniform(0.04, 0.98) ** 0.85)
                 ang = random.uniform(0, 2.0 * math.pi)
                 sx = int(round(cx + dist * math.cos(ang)))
                 sy = int(round(cy + dist * math.sin(ang)))
@@ -163,26 +196,65 @@ def generate_synthetic_digital_dots(
                 dist_c = math.hypot(sx - cx, sy - cy)
                 is_bullseye = (dist_c <= bullseye_r)
 
-                dot_r = random.uniform(7.0, 8.2)
+                dot_r = random.uniform(6.5, 9.5)
 
                 if is_bullseye:
-                    # Pure white / light grey disc inside black bullseye
-                    dot_color = (random.randint(245, 255), random.randint(245, 255), random.randint(245, 255))
-                    cv2.circle(img, (sx, sy), int(round(dot_r)), dot_color, -1, cv2.LINE_AA)
+                    # White / light cyan disc inside black bullseye (screen format)
+                    dot_color = random.choice([
+                        (random.randint(235, 255), random.randint(235, 255), random.randint(235, 255)), # pure white
+                        (random.randint(240, 255), random.randint(230, 250), random.randint(200, 230)), # cyan/light-blue
+                        (random.randint(210, 230), random.randint(210, 230), random.randint(210, 230))  # light grey
+                    ])
                 else:
-                    # Medium grey disc on cream paper
-                    g_val = random.randint(180, 210)
-                    dot_color = (g_val, g_val, g_val)
-                    cv2.circle(img, (sx, sy), int(round(dot_r)), dot_color, -1, cv2.LINE_AA)
+                    color_choice = random.random()
+                    if color_choice < 0.50:
+                        # Blue dot (BGR: B in 180-255, G in 60-140, R in 10-50)
+                        dot_color = (random.randint(180, 255), random.randint(60, 140), random.randint(10, 50))
+                    elif color_choice < 0.75:
+                        # Dark grey / black dot
+                        g_val = random.randint(25, 75)
+                        dot_color = (g_val, g_val, g_val)
+                    else:
+                        # Faint low-contrast light grey dot (like Foto 1 & Foto 4)
+                        g_val = random.randint(170, 195)
+                        dot_color = (g_val, min(255, g_val + random.randint(0, 5)), max(0, g_val - random.randint(0, 5)))
 
-                # Bounding box
-                bw_box = dot_r * 2.3
-                bh_box = dot_r * 2.3
-                xmin = sx - bw_box / 2.0
-                ymin = sy - bh_box / 2.0
-                xmax = sx + bw_box / 2.0
-                ymax = sy + bh_box / 2.0
-                bboxes.append((xmin, ymin, xmax, ymax))
+                event_pts = [(sx, sy)]
+                if event_type == "pair":
+                    pair_ang = random.uniform(0, 2.0 * math.pi)
+                    pair_sep = dot_r * random.uniform(1.2, 2.1)
+                    p2x = int(round(sx + pair_sep * math.cos(pair_ang)))
+                    p2y = int(round(sy + pair_sep * math.sin(pair_ang)))
+                    event_pts.append((p2x, p2y))
+                elif event_type == "triplet":
+                    pair_ang = random.uniform(0, 2.0 * math.pi)
+                    pair_sep = dot_r * random.uniform(1.2, 2.1)
+                    p2x = int(round(sx + pair_sep * math.cos(pair_ang)))
+                    p2y = int(round(sy + pair_sep * math.sin(pair_ang)))
+                    p3x = int(round(sx + pair_sep * math.cos(pair_ang + 1.1)))
+                    p3y = int(round(sy + pair_sep * math.sin(pair_ang + 1.1)))
+                    event_pts.extend([(p2x, p2y), (p3x, p3y)])
+
+                for px, py in event_pts:
+                    px = max(15, min(w - 15, px))
+                    py = max(15, min(h - 15, py))
+                    cv2.circle(img, (px, py), int(round(dot_r)), dot_color, -1, cv2.LINE_AA)
+                    bw_box = dot_r * 2.2
+                    bh_box = dot_r * 2.2
+                    xmin = px - bw_box / 2.0
+                    ymin = py - bh_box / 2.0
+                    xmax = px + bw_box / 2.0
+                    ymax = py + bh_box / 2.0
+                    bboxes.append((xmin, ymin, xmax, ymax))
+
+                current_shots += len(event_pts)
+
+        # Add optional LCD scanline effect on 30% of samples
+        if random.random() < 0.30:
+            lines = np.zeros_like(img, dtype=np.float32)
+            for y_line in range(0, h, 3):
+                lines[y_line, :] = random.randint(10, 25)
+            img = np.clip(img.astype(np.float32) - lines, 0, 255).astype(np.uint8)
 
         # Rotate / augment
         rot = random.choice(["none", "90", "180", "270", "slight"])
@@ -249,11 +321,11 @@ def build_final_dataset():
     for d in [train_img, val_img, train_lbl, val_lbl]:
         d.mkdir(parents=True, exist_ok=True)
 
-    # 1. Augment user samples
+    # 1. Augment user samples (both master Kruger scans and 12 real smartphone photos)
     build_augmented_user_samples(train_img, train_lbl, val_img, val_lbl)
 
     # 2. Generate synthetic digital dots targets + hard negatives
-    generate_synthetic_digital_dots(train_img, train_lbl, val_img, val_lbl, num_samples=400)
+    generate_synthetic_digital_dots(train_img, train_lbl, val_img, val_lbl, num_samples=350)
 
     # 3. Incorporate selected physical puncture targets from dataset_kruger for generalization
     kruger_dir = Path("training/dataset_kruger")
@@ -290,4 +362,3 @@ names:
 
 if __name__ == "__main__":
     build_final_dataset()
-

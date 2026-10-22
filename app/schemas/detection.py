@@ -45,5 +45,5 @@ class FrameDetectionRequest(BaseModel):
     caliber_mm: Optional[float] = Field(default=4.5, description="Bullet caliber in mm (e.g. 4.5mm airgun, 9mm pistol)")
     calibration_mm_per_pixel: Optional[float] = Field(default=None, description="Custom scale override (mm per pixel)")
     known_shots_count: Optional[int] = Field(default=0, description="Known shots count from previous frames to detect deltas")
-    engine: Optional[str] = Field(default="model_sendiri", description="Detection engine: 'model_sendiri' (YOLOv8) or 'gemini' (Gemini API)")
+    engine: Optional[str] = Field(default="model_sendiri", description="Detection engine: 'model_sendiri', 'yolo26', or 'yolo11'")
 

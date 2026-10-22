@@ -85,6 +85,7 @@ training/dataset_final/
 training/dataset_combined/
 training/dataset_kruger/
 training/yolo_target_holes_dataset/
+training/user_target_photos/
 training/datasets/
 datasets/
 # Arsip dataset terkompresi

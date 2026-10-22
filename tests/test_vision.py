@@ -189,7 +189,9 @@ def test_detection_engines_endpoint():
     assert "engines" in data
     engine_ids = [e["id"] for e in data["engines"]]
     assert "model_sendiri" in engine_ids
-    assert "gemini" in engine_ids
+    assert "yolo26" in engine_ids
+    assert "yolo11" in engine_ids
+    assert "gemini" not in engine_ids
 
 
 def test_detect_upload_with_engine_model_sendiri():
@@ -210,16 +212,15 @@ def test_detect_upload_with_engine_model_sendiri():
     assert data["detection_engine_used"] == "model_sendiri"
 
 
-def test_gemini_configuration_status():
+def test_model_status_engines():
     response = client.get("/api/v1/detect/model-status")
     assert response.status_code == 200
     data = response.json()
-    assert "gemini_api_configured" in data
-    assert data["gemini_api_configured"] is True
-    assert "gemini_model" in data
     assert "available_engines" in data
-    assert "gemini" in data["available_engines"]
     assert "model_sendiri" in data["available_engines"]
+    assert "yolo26" in data["available_engines"]
+    assert "yolo11" in data["available_engines"]
+    assert "gemini" not in data["available_engines"]
 
 
 def test_detect_upload_with_engine_yolo26():

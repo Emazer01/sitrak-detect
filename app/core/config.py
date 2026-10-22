@@ -61,26 +61,8 @@ class Settings(BaseSettings):
     AI_YOLO26_PATH: Path = BASE_DIR / "models" / "bullet_hole_yolo26.pt"
     AI_YOLO11_PATH: Path = BASE_DIR / "models" / "bullet_hole_yolo11.pt"
     AI_CONFIDENCE_THRESHOLD: float = 0.15
-    AI_IOU_THRESHOLD: float = 0.45
-    DETECTION_ENGINE: str = "hybrid"  # "hybrid", "ai", "cv", or "gemini"
-
-    # Gemini Multimodal AI Settings
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-
-    def get_effective_gemini_model(self) -> str:
-        """
-        Returns a valid, active Gemini model identifier.
-        If user specified a deprecated model (such as gemini-2.5, gemini-2.0, gemini-1.5),
-        automatically upgrades to 'gemini-3.8-flash' to prevent 404 NOT_FOUND errors.
-        """
-        m = (self.GEMINI_MODEL or "").strip()
-        if not m:
-            return "gemini-3.8-flash"
-        legacy_prefixes = ("gemini-2.5", "gemini-2.0", "gemini-1.5")
-        if any(m.startswith(prefix) for prefix in legacy_prefixes):
-            return "gemini-3.8-flash"
-        return m
+    AI_IOU_THRESHOLD: float = 0.58
+    DETECTION_ENGINE: str = "hybrid"  # "hybrid", "ai", "cv", "yolo26", "yolo11", "model_sendiri"
 
 
 settings = Settings()
