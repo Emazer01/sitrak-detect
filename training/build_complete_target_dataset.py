@@ -10,18 +10,18 @@ import numpy as np
 
 def build_augmented_user_samples(output_train_img: Path, output_train_lbl: Path, output_val_img: Path, output_val_lbl: Path):
     """
-    Augments all user target images (5 Krüger master scans + 12 smartphone photos of targets)
+    Augments all user target images (5 Krüger master scans + 12 smartphone photos + real physical paper target with patches)
     with exact ground-truth labels via rotations (0, 90, 180, 270, slight angle), flips,
     and photometric / lighting variations.
     """
     user_samples_dir = Path("training/assets/user_samples")
     sample_files = sorted(list(user_samples_dir.glob("user_*.jpg")))
 
-    print(f"[Augmenter] Found {len(sample_files)} user ground-truth images (master scans + real smartphone photos).")
+    print(f"[Augmenter] Found {len(sample_files)} user ground-truth images (master scans + real smartphone photos + physical paper).")
 
     count = 0
     # Reserve selected real user photos and master samples for validation
-    val_set = {"user_kruger_2", "user_kruger_4", "user_photo_3", "user_photo_8", "user_photo_11"}
+    val_set = {"user_kruger_2", "user_kruger_4", "user_photo_3", "user_photo_8", "user_photo_11", "user_physical_paper_1"}
 
     for s_idx, img_file in enumerate(sample_files, 1):
         lbl_file = img_file.with_suffix(".txt")
@@ -43,9 +43,9 @@ def build_augmented_user_samples(output_train_img: Path, output_train_lbl: Path,
                     ymax = (ncy + nbh / 2.0) * h
                     base_bboxes.append((xmin, ymin, xmax, ymax))
 
-        num_augs = 28
+        num_augs = 50 if "user_physical" in img_file.stem else 28
         for aug_i in range(num_augs):
-            is_val = (img_file.stem in val_set and aug_i < 5)
+            is_val = (img_file.stem in val_set and aug_i < 6)
             dst_img_dir = output_val_img if is_val else output_train_img
             dst_lbl_dir = output_val_lbl if is_val else output_train_lbl
 
@@ -155,7 +155,7 @@ def generate_synthetic_digital_dots(
         return
 
     target_sz = 640
-    print(f"[Synthesizer] Generating {num_samples} digital dots target images with adjacent & overlapping shots...")
+    print(f"[Synthesizer] Generating {num_samples} digital dots & paper puncture target images with pasters/tambalan...")
 
     for i in range(num_samples):
         is_val = (i < int(num_samples * 0.16))
@@ -168,6 +168,33 @@ def generate_synthetic_digital_dots(
         outer_r = min(cx, cy, w - cx, h - cy) * 0.94
         scale_x = target_sz / float(w)
         scale_y = target_sz / float(h)
+
+        # 1. HARD NEGATIVE PASTERS / STICKERS ("TAMBALAN SASARAN")
+        # On 45% of targets, paste smooth circular/elliptical repair pasters with NO BOUNDING BOX
+        # This explicitly teaches the network to distinguish smooth stickers from real bullet tears.
+        if random.random() < 0.45:
+            num_pasters = random.randint(1, 3)
+            for _ in range(num_pasters):
+                p_dist = outer_r * random.uniform(0.10, 0.88)
+                p_ang = random.uniform(0, 2.0 * math.pi)
+                p_cx = int(round(cx + p_dist * math.cos(p_ang)))
+                p_cy = int(round(cy + p_dist * math.sin(p_ang)))
+                p_r = random.randint(14, 26)
+
+                if p_dist <= bullseye_r:
+                    # Bullseye sticker: smooth dark matte circle (BGR: 50-115) with subtle border
+                    c_val = random.randint(55, 115)
+                    paster_color = (c_val, c_val, c_val)
+                    border_color = (max(0, c_val - 25), max(0, c_val - 25), max(0, c_val - 25))
+                else:
+                    # Scoring ring sticker: smooth cream / white paper patch
+                    c_val = random.randint(215, 245)
+                    paster_color = (c_val, c_val, c_val)
+                    border_color = (c_val - 30, c_val - 30, c_val - 30)
+
+                # Draw smooth paster sticker (NO BBOX)
+                cv2.circle(img, (p_cx, p_cy), p_r, paster_color, -1, cv2.LINE_AA)
+                cv2.circle(img, (p_cx, p_cy), p_r, border_color, 1, cv2.LINE_AA)
 
         # 16% Hard Negative (clean target with 0 shots)
         is_hard_negative = (random.random() < 0.16)
@@ -197,6 +224,7 @@ def generate_synthetic_digital_dots(
                 is_bullseye = (dist_c <= bullseye_r)
 
                 dot_r = random.uniform(6.5, 9.5)
+                is_physical_puncture = (random.random() < 0.50)
 
                 if is_bullseye:
                     # White / light cyan disc inside black bullseye (screen format)
@@ -238,7 +266,31 @@ def generate_synthetic_digital_dots(
                 for px, py in event_pts:
                     px = max(15, min(w - 15, px))
                     py = max(15, min(h - 15, py))
-                    cv2.circle(img, (px, py), int(round(dot_r)), dot_color, -1, cv2.LINE_AA)
+
+                    if is_physical_puncture:
+                        # Render torn paper fiber puncture with jagged edges and cardboard backing contrast
+                        num_teeth = random.randint(10, 14)
+                        pts = []
+                        for t_idx in range(num_teeth):
+                            theta = (2.0 * math.pi * t_idx) / num_teeth
+                            r_var = dot_r * random.uniform(0.72, 1.25)
+                            px_t = int(round(px + r_var * math.cos(theta)))
+                            py_t = int(round(py + r_var * math.sin(theta)))
+                            pts.append([px_t, py_t])
+                        poly = np.array(pts, dtype=np.int32)
+                        if is_bullseye:
+                            backing_c = random.choice([
+                                (random.randint(145, 195), random.randint(145, 195), random.randint(145, 195)),
+                                (random.randint(110, 150), random.randint(110, 150), random.randint(110, 150))
+                            ])
+                        else:
+                            backing_c = (random.randint(30, 70), random.randint(30, 70), random.randint(30, 70))
+                        cv2.fillPoly(img, [poly], backing_c, cv2.LINE_AA)
+                        # Shadow center
+                        cv2.circle(img, (px, py), int(round(dot_r * 0.45)), (random.randint(25, 65), random.randint(25, 65), random.randint(25, 65)), -1, cv2.LINE_AA)
+                    else:
+                        cv2.circle(img, (px, py), int(round(dot_r)), dot_color, -1, cv2.LINE_AA)
+
                     bw_box = dot_r * 2.2
                     bh_box = dot_r * 2.2
                     xmin = px - bw_box / 2.0
@@ -324,8 +376,8 @@ def build_final_dataset():
     # 1. Augment user samples (both master Kruger scans and 12 real smartphone photos)
     build_augmented_user_samples(train_img, train_lbl, val_img, val_lbl)
 
-    # 2. Generate synthetic digital dots targets + hard negatives
-    generate_synthetic_digital_dots(train_img, train_lbl, val_img, val_lbl, num_samples=350)
+    # 2. Generate synthetic digital dots & paper puncture targets + hard negative pasters
+    generate_synthetic_digital_dots(train_img, train_lbl, val_img, val_lbl, num_samples=400)
 
     # 3. Incorporate selected physical puncture targets from dataset_kruger for generalization
     kruger_dir = Path("training/dataset_kruger")

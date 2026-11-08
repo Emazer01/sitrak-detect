@@ -1,8 +1,10 @@
 import os
 import sys
+import math
 import shutil
 from pathlib import Path
 import argparse
+import cv2
 from ultralytics import YOLO
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -107,12 +109,10 @@ def main():
         workers=args.workers,
         device=args.device
     )
-    shutil.copy(t26, "models/bullet_hole_yolo.pt")
-    print(f"[DEPLOY] Copied YOLO26 to default: models/bullet_hole_yolo.pt")
 
     # 2. Train YOLO11
     base_11 = "models/bullet_hole_yolo11.pt" if Path("models/bullet_hole_yolo11.pt").exists() else "yolo11n.pt"
-    train_model(
+    t11 = train_model(
         model_name="yolo11",
         base_model_file=base_11,
         output_target_file="models/bullet_hole_yolo11.pt",
@@ -123,6 +123,38 @@ def main():
         workers=args.workers,
         device=args.device
     )
+
+    # 3. Model Selection: evaluate on the real physical patched target
+    print("\n" + "=" * 75)
+    print(" EVALUATING MODELS ON PHYSICAL TARGET WITH PATCHES")
+    print("=" * 75)
+    test_img_path = Path("training/assets/user_samples/user_physical_paper_1.jpg")
+    best_model_file = t11
+    if test_img_path.exists():
+        im = cv2.imread(str(test_img_path))
+        patch_coords = [(403.0, 303.0), (461.0, 333.0)]
+
+        for name, m_path in [("YOLO26", t26), ("YOLO11", t11)]:
+            m = YOLO(str(m_path))
+            res = m.predict(im, conf=0.20, verbose=False)
+            boxes = res[0].boxes
+            detected_patches = 0
+            detected_holes = 0
+            for b in boxes:
+                xyxy = b.xyxy[0].tolist()
+                bcx = (xyxy[0] + xyxy[2]) / 2.0
+                bcy = (xyxy[1] + xyxy[3]) / 2.0
+                is_patch = any(math.hypot(bcx - px, bcy - py) < 22.0 for px, py in patch_coords)
+                if is_patch:
+                    detected_patches += 1
+                else:
+                    detected_holes += 1
+            print(f"[{name}] Detected Real Holes: {detected_holes}/10 | False Positive Patches: {detected_patches}/2")
+            if detected_patches == 0 and detected_holes >= 8:
+                best_model_file = m_path
+
+    shutil.copy(best_model_file, "models/bullet_hole_yolo.pt")
+    print(f"\n[DEPLOY] Deployed best performer ({best_model_file.name}) to models/bullet_hole_yolo.pt")
 
 
 if __name__ == "__main__":
