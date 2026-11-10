@@ -165,5 +165,224 @@ class ScoringEngine:
             return "right"
 
 
+    def _resolve_weapon_category(
+        self,
+        weapon_name: Optional[str] = None,
+        weapon_type: Optional[str] = None,
+        caliber_mm: Optional[float] = None
+    ) -> str:
+        """
+        Identifies weapon family: 'pistol', 'senapan_serbu', 'sniper', 'smg', or 'senapan_angin'.
+        """
+        combined = f"{weapon_name or ''} {weapon_type or ''}".lower()
+        cal = float(caliber_mm or 0)
+
+        if any(k in combined for k in ["sniper", "spr", "runduk", "dmr", "awp", "remington", "7.62"]):
+            return "sniper"
+        if any(k in combined for k in ["pm2", "mp5", "smg", "submachine"]):
+            return "smg"
+        if any(k in combined for k in ["pistol", "g2", "glock", "sig", "revolver", "beretta", "colt", "makarov", "hs9"]):
+            return "pistol"
+        if any(k in combined for k in ["senapan", "ss1", "ss2", "m16", "m4", "ak47", "ak-", "serbu", "aug", "steyr", "fnc"]):
+            return "senapan_serbu"
+        if cal >= 8.5 and cal <= 11.5:
+            return "pistol"
+        if cal >= 5.0 and cal <= 7.7:
+            return "senapan_serbu"
+        if cal <= 4.6:
+            return "senapan_angin"
+        return "senapan_serbu"
+
+    def generate_tactical_advice(
+        self,
+        bias_key: str,
+        grouping_diameter_mm: float,
+        accuracy_percentage: float,
+        weapon_name: Optional[str] = None,
+        weapon_type: Optional[str] = None,
+        caliber_mm: Optional[float] = None,
+        stance: Optional[str] = None,
+        distance_m: Optional[float] = None
+    ) -> List[str]:
+        """
+        Generates comprehensive, multi-layered tactical coaching advice tailored to:
+        1. Biomechanical error identified by directional bias
+        2. Weapon specific characteristics (Pistol G2/Glock vs SS2/M16 vs Sniper SPR vs SMG)
+        3. Stance-specific posture (Tiarap, Berdiri, Berlutut)
+        4. Remedial drill assignment for target training
+        """
+        norm_bias = (bias_key or "centered").lower().strip()
+        category = self._resolve_weapon_category(weapon_name, weapon_type, caliber_mm)
+        w_label = (weapon_name or weapon_type or "Senjata").strip()
+        stance_str = (stance or "").lower()
+        advice: List[str] = []
+
+        # --- 1. BIOMECHANICAL & DIRECTIONAL CORRECTION ---
+        if norm_bias in ["bottom-left", "condong ke kiri bawah"]:
+            advice.append(
+                "Koreksi Tarikan Picu (Trigger Jerking / Flinching): Titik perkenaan condong ke kiri bawah menandakan sentakan pelatuk mendadak dan pengetatan jari secara tiba-tiba sesaat sebelum tembakan meletus. Tarik picu secara halus, linier lurus ke belakang menggunakan bantalan ruas pertama jari telunjuk."
+            )
+            advice.append(
+                "Stabilisasi Cengkeraman (Grip Pressure): Hindari gerakan meremas pegangan (milking grip) saat jari telunjuk bergerak menekan picu. Pertahankan tekanan cengkeraman tangan penembak tetap konstan dari awal pembidikan hingga peluru keluar dari laras."
+            )
+        elif norm_bias in ["bottom-right", "condong ke kanan bawah"]:
+            advice.append(
+                "Koreksi Tekanan Ibu Jari (Thumbing) & Pergelangan Tangan: Perkenaan kanan bawah mengindikasikan tekanan lateral ibu jari yang berlebihan pada frame senjata atau penurunan pergelangan tangan (breaking wrist down) saat menekan picu."
+            )
+            advice.append(
+                "Kunci Sendi Pergelangan: Kunci sendi pergelangan tangan penembak pada posisi netral dan kokoh agar tidak mengendur di bawah gaya hentakan proyektil."
+            )
+        elif norm_bias in ["top-left", "condong ke kiri atas"]:
+            advice.append(
+                "Koreksi Antisipasi Hentakan (Pushing / Recoil Anticipation): Penembak terindikasi mendorong moncong senjata ke depan atau mengangkat bahu kiri tepat sebelum letupan untuk melawan hentakan."
+            )
+            advice.append(
+                "Penyelarasan Pejera (Sight Alignment): Periksa celah pejera belakang; pastikan bilah pejera depan tidak menyembul ke kiri atas dan tetap berada di tengah rata (flush) dengan celah belakang."
+            )
+        elif norm_bias in ["top-right", "condong ke kanan atas"]:
+            advice.append(
+                "Koreksi Tekanan Tumit Tangan (Heeling): Perkenaan kanan atas terjadi akibat dorongan tumit telapak tangan kanan (heel of the palm) ke arah moncong saat mengantisipasi hentakan tembakan."
+            )
+            advice.append(
+                "Relaksasi Otot Bahu & Pundak: Turunkan ketegangan pundak penembak; biarkan sistem rangka menyerap dorongan recoil secara alami tanpa dorongan otot aktif ke depan."
+            )
+        elif norm_bias in ["left", "condong ke kiri"]:
+            advice.append(
+                "Koreksi Kedalaman Jari pada Picu: Penempatan jari telunjuk terlalu dangkal (hanya di ujung kuku) menyebabkan tuas picu tertarik ke arah kiri penembak. Posisikan tengah bantalan ruas distal jari telunjuk tegak lurus 90 derajat terhadap picu."
+            )
+            advice.append(
+                "Pemeriksaan Kemiringan Senjata (Canting): Pastikan senjata tidak miring ke kiri; kemiringan beberapa derajat akan menggeser lintasan balistik proyektil ke kiri sasaran."
+            )
+        elif norm_bias in ["right", "condong ke kanan"]:
+            advice.append(
+                "Koreksi Penarikan Samping (Trigger Snatching): Jari telunjuk terlalu dalam masuk ke rumah picu (hingga lipatan ruas kedua), sehingga saat picu ditarik senjata tertarik ke sisi kanan."
+            )
+            advice.append(
+                "Cengkeraman Jari Pendukung: Kendurkan cengkraman tiga jari bawah (tengah, manis, kelingking) agar tidak memuntir poros senjata ke kanan saat tarikan picu."
+            )
+        elif norm_bias in ["top", "condong ke atas"]:
+            advice.append(
+                "Koreksi Pejera Naik (High Sight Picture): Pejera depan terlalu tinggi mencuat di atas celah pejera belakang atau fokus mata terbagi ke sasaran bukannya ke pejera depan."
+            )
+            advice.append(
+                "Pengaturan Siklus Pernapasan: Lepas tembakan pada fase jeda pernapasan alami (natural respiratory pause) setelah menghembuskan separuh kapasitas paru-paru."
+            )
+        elif norm_bias in ["bottom", "condong ke bawah"]:
+            advice.append(
+                "Koreksi Penurunan Moncong (Dropping Muzzle): Moncong senjata turun sebelum peluru meninggalkan laras akibat pelepasan fokus bidikan atau kepala menunduk tergesa-gesa untuk melihat hasil tembakan."
+            )
+            advice.append(
+                "Follow-Through (Lanjutan Bidikan): Tahan posisi bidikan, tekanan picu, dan pandangan mata ke pejera selama 1 detik setelah tembakan meletus sebelum mengendurkan senjata."
+            )
+        else:
+            advice.append(
+                "Konsistensi Titik Perkenaan Presisi: Pola perkenaan terpusat sangat baik di poros bullseye sasaran. Pertahankan kestabilan ritme penembakan dan visualisasi gambar bidik yang telah dicapai."
+            )
+
+        # --- 2. WEAPON-SPECIFIC COACHING ADVICE ---
+        if category == "pistol":
+            advice.append(
+                f"Catatan Khusus Senjata [{w_label}]: Pada pistol kaliber pendek (sight radius pendek), penyimpangan pejera 1 mm di laras mengakibatkan deviasi besar pada lesan. Terapkan prinsip pembagian cengkeraman 60-70% pada tangan penopang (tangan kiri) dan 30-40% pada tangan penembak (tangan kanan). Manfaatkan trigger reset point tanpa melepaskan picu sepenuhnya ke depan untuk tembakan kedua yang cepat dan presisi."
+            )
+        elif category == "senapan_serbu":
+            advice.append(
+                f"Catatan Khusus Senjata [{w_label}]: Pastikan penempatan pipi pada popor (consistent cheek weld) selalu di titik yang identik untuk menjamin keselarasan eye-relief. Tanamkan popor senapan secara rapat di lekukan bahu (shoulder pocket) untuk meredam recoil kaliber 5.56mm/7.62mm secara simetris, dan tahan handguard tanpa menekan kotak magasen."
+            )
+        elif category == "sniper":
+            advice.append(
+                f"Catatan Khusus Senjata [{w_label}]: Hilangkan kesalahan paralaks teleskop optik (pastikan tidak ada bayangan melingkar di sekeliling reticle optik). Gunakan Natural Point of Aim (NPOA) dengan menyetel sandaran bipod/monopod agar senapan mengunci target tanpa ketegangan otot punggung atau leher."
+            )
+        elif category == "smg":
+            advice.append(
+                f"Catatan Khusus Senjata [{w_label}]: Pastikan popor terentang terkunci sempurna pada bahu penembak. Kendalikan muzzle climb yang cepat pada tembakan berturutan dengan tekanan ke bawah yang proporsional pada handguard depan."
+            )
+        elif category == "senapan_angin":
+            advice.append(
+                f"Catatan Khusus Senjata [{w_label}]: Proyektil memiliki waktu lintas laras (lock time) lebih lambat; terapkan follow-through yang lebih lama dan rileks tanpa sentakan recoil buatan."
+            )
+
+        # --- 3. STANCE-SPECIFIC GUIDANCE ---
+        if "tiarap" in stance_str or "prone" in stance_str:
+            advice.append(
+                "Optimasi Sikap Tiarap (Prone Stance): Siku kedua tangan wajib membentuk segitiga piramida penyangga yang kokoh pada matras. Pastikan pernapasan menggunakan diafragma perut agar rongga dada tidak mengangkat moncong senapan saat membidik."
+            )
+        elif "berlutut" in stance_str or "kneeling" in stance_str:
+            advice.append(
+                "Optimasi Sikap Berlutut (Kneeling Stance): Pastikan siku tangan penopang bertumpu sedikit di depan tempurung lutut kiri (bukan tulang ketemu tulang) untuk menghindari slip mikro saat picu ditarik."
+            )
+        elif "berdiri" in stance_str or "standing" in stance_str:
+            advice.append(
+                "Optimasi Sikap Berdiri (Standing Stance): Buka kaki selebar bahu dengan condong badan agresif ke depan (athletic forward lean). Jangan melawan goyangan alami tubuh secara kaku; tarik picu bertahap saat lesan berada di zona goyangan terkecil."
+            )
+
+        # --- 4. GROUPING & DISPERSION EVALUATION ---
+        if grouping_diameter_mm > 65.0:
+            advice.append(
+                f"Evaluasi Kerapatan (Grouping {grouping_diameter_mm} mm): Kelompok tembakan masih menyebar cukup luas. Prioritaskan latihan penembakan lambat terukur (slow fire) untuk memantapkan konsistensi mekanika tubuh penembak."
+            )
+        elif grouping_diameter_mm <= 35.0:
+            advice.append(
+                f"Evaluasi Kerapatan (Grouping {grouping_diameter_mm} mm): Kerapatan tembakan sangat luar biasa dan konsisten. Pertahankan disiplin bidik dan tingkatkan tempo penembakan secara bertahap."
+            )
+
+        # --- 5. ASSIGNED REMEDIAL DRILL ---
+        if category == "pistol":
+            if norm_bias in ["bottom-left", "bottom", "bottom-right"]:
+                advice.append(
+                    "Latihan Remedial yang Direkomendasikan: 'Ball & Dummy Drill' (campurkan peluru hampa/dummy secara acak di magasen) untuk melatih penembak agar tidak tersentak saat picu meletus, serta 'Wall Drill' (dry fire menempel di dinding)."
+                )
+            else:
+                advice.append(
+                    "Latihan Remedial yang Direkomendasikan: 'Coin Drill on Front Sight' (letakkan koin di atas pejera depan saat latihan kering; koin tidak boleh jatuh saat picu ditekan)."
+                )
+        elif category in ["senapan_serbu", "sniper"]:
+            advice.append(
+                "Latihan Remedial yang Direkomendasikan: 'Dry-Fire Reset Cadence Drill' (latihan kering fokus pada mendengar bunyi klik reset pelatuk tanpa merusak posisi cheek-weld dan gambar bidik di sasaran)."
+            )
+
+        return advice
+
+    def generate_analysis_summary(
+        self,
+        bias_key: str,
+        grouping_diameter_mm: float,
+        accuracy_percentage: float,
+        weapon_name: Optional[str] = None,
+        shots_count: int = 0,
+        total_score: int = 0,
+        stance: Optional[str] = None
+    ) -> str:
+        """
+        Builds a rich diagnostic summary paragraph describing shot distribution,
+        clustering quality, and operational shooting readiness.
+        """
+        bias_trans = {
+            "centered": "terpusat di tengah sasaran (bullseye)",
+            "top-left": "condong ke sektor kiri atas",
+            "top-right": "condong ke sektor kanan atas",
+            "bottom-left": "condong ke sektor kiri bawah",
+            "bottom-right": "condong ke sektor kanan bawah",
+            "top": "condong ke sektor atas",
+            "bottom": "condong ke sektor bawah",
+            "left": "condong ke sektor kiri",
+            "right": "condong ke sektor kanan"
+        }
+        bias_desc = bias_trans.get((bias_key or "centered").lower().strip(), "pada sasaran")
+        w_text = f" menggunakan {weapon_name}" if weapon_name else ""
+        s_text = f" posisi {stance}" if stance else ""
+
+        if grouping_diameter_mm <= 30.0 and accuracy_percentage >= 85.0:
+            cluster_text = f"Kerapatan tembakan sangat presisi (grouping {grouping_diameter_mm} mm) dengan perkenaan mayoritas menembus zona cincin 9 dan 10."
+        elif grouping_diameter_mm <= 55.0:
+            cluster_text = f"Kerapatan tembakan tergolong baik (grouping {grouping_diameter_mm} mm) dengan pengelompokan yang cukup solid."
+        else:
+            cluster_text = f"Sebaran tembakan masih cukup lebar (dispersi {grouping_diameter_mm} mm) dengan fluktuasi perkenaan antar tembakan."
+
+        return (
+            f"Hasil evaluasi {shots_count} butir tembakan{w_text}{s_text} menghasilkan total skor {total_score} "
+            f"({accuracy_percentage}% akurasi). {cluster_text} Titik perkenaan rata-rata (MPI) teridentifikasi {bias_desc}."
+        )
+
+
 scoring_engine = ScoringEngine()
 

@@ -33,6 +33,8 @@ class DetectionResponse(BaseModel):
     shots_count: int = Field(..., description="Total count of detected bullet impacts")
     shots: List[ShotDetail] = Field(default_factory=list, description="List of detected shots")
     analytics: TargetAnalytics = Field(..., description="Dispersion and directional bias analysis")
+    analysis_summary: Optional[str] = Field(None, description="Diagnostic analysis summary of the shooting performance")
+    tactical_advice: Optional[List[str]] = Field(default_factory=list, description="Tactical advice and biomechanical coaching notes")
     annotated_image_url: Optional[str] = Field(None, description="Relative or absolute URL to annotated image result")
     detection_engine_used: Optional[str] = Field(default="cv", description="Engine used: 'yolo_ai', 'cv', or 'hybrid'")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional metadata echoed back")
@@ -46,4 +48,8 @@ class FrameDetectionRequest(BaseModel):
     calibration_mm_per_pixel: Optional[float] = Field(default=None, description="Custom scale override (mm per pixel)")
     known_shots_count: Optional[int] = Field(default=0, description="Known shots count from previous frames to detect deltas")
     engine: Optional[str] = Field(default="model_sendiri", description="Detection engine: 'model_sendiri', 'yolo26', or 'yolo11'")
+    weapon_name: Optional[str] = Field(default=None, description="Specific weapon model (e.g. Pindad G2 Elite, SS2-V4)")
+    weapon_type: Optional[str] = Field(default=None, description="Weapon category (e.g. Pistol, Senapan Serbu, Sniper)")
+    shooting_stance: Optional[str] = Field(default=None, description="Shooting stance (e.g. Berdiri, Tiarap, Berlutut)")
+    distance_m: Optional[float] = Field(default=None, description="Shooting distance in meters")
 

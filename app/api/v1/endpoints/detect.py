@@ -40,7 +40,11 @@ async def detect_shots_upload(
     calibration_mm_per_pixel: Optional[float] = Form(None, description="Custom scale override (mm/pixel)"),
     shooter_name: Optional[str] = Form(None, description="Shooter identifier or name"),
     session_id: Optional[str] = Form(None, description="Shooting session tracking ID"),
-    engine: Optional[str] = Form("model_sendiri", description="Detection engine: 'model_sendiri', 'yolo26', or 'yolo11'")
+    engine: Optional[str] = Form("model_sendiri", description="Detection engine: 'model_sendiri', 'yolo26', or 'yolo11'"),
+    weapon_name: Optional[str] = Form(None, description="Model/name of weapon used (e.g. Pindad G2 Elite, Glock 17, SS2-V4)"),
+    weapon_type: Optional[str] = Form(None, description="Category of weapon (e.g. Pistol, Senapan Serbu, Sniper)"),
+    shooting_stance: Optional[str] = Form(None, description="Shooting stance (e.g. Berdiri, Tiarap, Berlutut)"),
+    distance_m: Optional[float] = Form(None, description="Shooting distance in meters")
 ) -> DetectionResponse:
     # 1. Validate file content and size
     file_bytes = await file.read()
@@ -60,7 +64,11 @@ async def detect_shots_upload(
         "raw_image_url": raw_url,
         "shooter_name": shooter_name,
         "session_id": session_id,
-        "requested_engine": engine
+        "requested_engine": engine,
+        "weapon_name": weapon_name,
+        "weapon_type": weapon_type,
+        "shooting_stance": shooting_stance,
+        "distance_m": distance_m
     }
 
     # 4. Execute Vision Pipeline
@@ -71,7 +79,11 @@ async def detect_shots_upload(
         target_type=target_type or "issf_standard_10_ring",
         scale_override=calibration_mm_per_pixel,
         metadata=metadata,
-        engine=engine
+        engine=engine,
+        weapon_name=weapon_name,
+        weapon_type=weapon_type,
+        shooting_stance=shooting_stance,
+        distance_m=distance_m
     )
 
     return result
@@ -101,7 +113,11 @@ async def detect_shots_frame(
     metadata = {
         "frame_mode": "incremental_stream",
         "known_shots_count": payload.known_shots_count,
-        "requested_engine": payload.engine
+        "requested_engine": payload.engine,
+        "weapon_name": payload.weapon_name,
+        "weapon_type": payload.weapon_type,
+        "shooting_stance": payload.shooting_stance,
+        "distance_m": payload.distance_m
     }
 
     result = vision_service.process_image(
@@ -110,7 +126,11 @@ async def detect_shots_frame(
         target_type=payload.target_type or "issf_standard_10_ring",
         scale_override=payload.calibration_mm_per_pixel,
         metadata=metadata,
-        engine=payload.engine
+        engine=payload.engine,
+        weapon_name=payload.weapon_name,
+        weapon_type=payload.weapon_type,
+        shooting_stance=payload.shooting_stance,
+        distance_m=payload.distance_m
     )
 
     # Add delta shots calculation in metadata

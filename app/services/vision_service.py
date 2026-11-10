@@ -1009,7 +1009,11 @@ class VisionService:
         target_type: str = "issf_standard_10_ring",
         scale_override: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        engine: Optional[str] = None
+        engine: Optional[str] = None,
+        weapon_name: Optional[str] = None,
+        weapon_type: Optional[str] = None,
+        shooting_stance: Optional[str] = None,
+        distance_m: Optional[float] = None
     ) -> DetectionResponse:
         """
         Executes end-to-end pipeline:
@@ -1089,6 +1093,33 @@ class VisionService:
         max_possible_score = max(shots_count * 10, 10 if shots_count == 0 else shots_count * 10)
         accuracy_percentage = round((total_score / max_possible_score) * 100.0, 1) if shots_count > 0 else 0.0
 
+        # Extract weapon metadata if passed inside metadata dict
+        effective_weapon_name = weapon_name or (metadata.get("weapon_name") if metadata else None)
+        effective_weapon_type = weapon_type or (metadata.get("weapon_type") if metadata else None)
+        effective_stance = shooting_stance or (metadata.get("shooting_stance") if metadata else None)
+        effective_distance = distance_m if distance_m is not None else (metadata.get("distance_m") if metadata else None)
+
+        # Generate tactical advice & ballistic performance summary tailored to weapon and stance
+        tactical_advice = scoring_engine.generate_tactical_advice(
+            bias_key=analytics.directional_bias,
+            grouping_diameter_mm=analytics.grouping_diameter_mm,
+            accuracy_percentage=accuracy_percentage,
+            weapon_name=effective_weapon_name,
+            weapon_type=effective_weapon_type,
+            caliber_mm=caliber_mm,
+            stance=effective_stance,
+            distance_m=effective_distance
+        )
+        analysis_summary = scoring_engine.generate_analysis_summary(
+            bias_key=analytics.directional_bias,
+            grouping_diameter_mm=analytics.grouping_diameter_mm,
+            accuracy_percentage=accuracy_percentage,
+            weapon_name=effective_weapon_name,
+            shots_count=shots_count,
+            total_score=total_score,
+            stance=effective_stance
+        )
+
         meta_info = {
             "perspective_corrected": was_warped,
             "cropped_to_square": was_cropped,
@@ -1098,7 +1129,11 @@ class VisionService:
             "scale_mm_per_pixel": scale_mm_px,
             "center": {"x": round(center_x, 1), "y": round(center_y, 1)},
             "ai_model": self.ai_model_name if self.ai_model else "none",
-            "selected_engine": chosen_engine
+            "selected_engine": chosen_engine,
+            "weapon_name": effective_weapon_name,
+            "weapon_type": effective_weapon_type,
+            "shooting_stance": effective_stance,
+            "distance_m": effective_distance
         }
         if metadata:
             meta_info.update(metadata)
@@ -1112,6 +1147,8 @@ class VisionService:
             shots_count=shots_count,
             shots=shots,
             analytics=analytics,
+            analysis_summary=analysis_summary,
+            tactical_advice=tactical_advice,
             annotated_image_url=annotated_url,
             detection_engine_used=engine_used,
             metadata=meta_info
